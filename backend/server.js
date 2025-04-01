@@ -130,16 +130,18 @@ app.post('/api/sessions/download', async (req, res) => {
             { header: 'Charging Ended', key: 'chargingEndedTime', width: 20 },
             { header: 'Metervalue Start', key: 'meterValueStart', width: 20 },
             { header: 'Metervalue End', key: 'meterValueEnd', width: 20 },
-            { header: 'Energy Consumed (kWh)', key: 'activeEnergyConsumed', width: 20 }
+            { header: 'Energy Consumed (kWh)', key: 'activeEnergyConsumed', width: 20 },
+            { header: '', width: 20 }
         ];
 
         // Add data
         worksheet.addRows(allSessions);
 
         const lastRow = allSessions.length + 1; 
-
+        const tarif = 0.30; // 30 cents per kWh
+        
         worksheet.getCell(`E${lastRow + 1}`).value = 'Total';
-        worksheet.getCell(`F${lastRow + 1}`).value = { formula: `SUM(F2:F${lastRow})`, result: 7 };
+        worksheet.getCell(`G${lastRow + 1}`).value = `Uitbetalen a ${tarif} / kWh`;
 
         worksheet.getCell('A1').font = { bold: true };
         worksheet.getCell('B1').font = { bold: true };
@@ -148,19 +150,28 @@ app.post('/api/sessions/download', async (req, res) => {
         worksheet.getCell('E1').font = { bold: true };
         worksheet.getCell('F1').font = { bold: true };
         worksheet.getCell(`E${lastRow + 1}`).font = { bold: true };
-        worksheet.getCell(`E${lastRow + 1}`).font = { bold: true };
+        worksheet.getCell(`F${lastRow + 1}`).font = { bold: true };
+        worksheet.getCell(`G${lastRow + 1}`).font = { bold: true };
+        worksheet.getCell(`H${lastRow + 1}`).font = { bold: true };
 
-        worksheet.getCell('A1').alignment = { horizontal: 'right' };
         worksheet.getCell('D1').alignment = { horizontal: 'right' };
         worksheet.getCell('E1').alignment = { horizontal: 'right' };
         worksheet.getCell('F1').alignment = { horizontal: 'right' };
         worksheet.getCell(`E${lastRow + 1}`).alignment = { horizontal: 'right' };
 
+        worksheet.getColumn(1).eachCell((cell, rowNumber) => {
+            if (rowNumber > 1) { // Skip header
+                cell.alignment = { horizontal: 'left' };
+            }
+        });
         worksheet.getColumn(6).eachCell((cell, rowNumber) => {
             if (rowNumber > 1) { // Skip header
                 cell.numFmt = '0.00'; // Ensures 2 decimal places
             }
         });
+
+        worksheet.getCell(`F${lastRow + 1}`).value = { formula: `SUM(F2:F${lastRow})`, result: 7 };
+        worksheet.getCell(`H${lastRow + 1}`).value = { formula: `F${lastRow + 1} * ${tarif}`, result: 7 };
 
         // Set response headers
         res.setHeader(
