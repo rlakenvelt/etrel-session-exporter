@@ -101,12 +101,21 @@ app.post('/api/sessions/download', async (req, res) => {
         console.log(`Fetching ${totalItems} sessions across ${totalPages} pages...`);
 
         // Fetch all pages
-        const allSessions = [...firstPage.content];
+        let allSessions = [...firstPage.content];
         for (let page = 2; page <= totalPages; page++) {
             console.log(`Fetching page ${page}/${totalPages}...`);
             const pageData = await fetchSessionPage(config, token, startDate, endDate, page);
             allSessions.push(...pageData.content);
         }
+        // get only chargingSessionId and activeEnergyConsumed from allSessions using map
+        allSessions = allSessions.map(session => ({
+            chargingSessionId: session.chargingSessionId,
+            chargingStartedTime: session.chargingStartedTime,
+            chargingEndedTime: session.chargingEndedTime,
+            meterValueStart: session.meterValueStart,
+            meterValueEnd: session.meterValueEnd,
+            activeEnergyConsumed: session.activeEnergyConsumed
+        }));
 
         console.log(`Successfully fetched ${allSessions.length} sessions.`);
 
@@ -117,24 +126,41 @@ app.post('/api/sessions/download', async (req, res) => {
         // Add headers based on the actual API response structure
         worksheet.columns = [
             { header: 'Session ID', key: 'chargingSessionId', width: 15 },
-            { header: 'Connector ID', key: 'connectorId', width: 10 },
-            { header: 'Identification Code', key: 'identificationCode', width: 20 },
-            { header: 'Vehicle Connected', key: 'vehicleConnectedTime', width: 20 },
             { header: 'Charging Started', key: 'chargingStartedTime', width: 20 },
             { header: 'Charging Ended', key: 'chargingEndedTime', width: 20 },
-            { header: 'Vehicle Disconnected', key: 'vehicleDisconnectedTime', width: 20 },
-            { header: 'Time Spent Charging', key: 'timeSpentCharging', width: 15 },
-            { header: 'Energy Consumed (kWh)', key: 'activeEnergyConsumed', width: 20 },
-            { header: 'Max Power (kW)', key: 'maxSessionPower', width: 15 },
-            { header: 'Status', key: 'chargingSessionStatus', width: 15 },
-            { header: 'Charging Mode', key: 'chargingMode', width: 15 },
-            { header: 'Selected Departure', key: 'selectedDepartureTime', width: 20 },
-            { header: 'Stop Reason', key: 'chargingSessionStopReason', width: 30 },
-            { header: 'Transaction ID', key: 'backendTransactionId', width: 15 }
+            { header: 'Metervalue Start', key: 'meterValueStart', width: 20 },
+            { header: 'Metervalue End', key: 'meterValueEnd', width: 20 },
+            { header: 'Energy Consumed (kWh)', key: 'activeEnergyConsumed', width: 20 }
         ];
 
         // Add data
         worksheet.addRows(allSessions);
+
+        const lastRow = allSessions.length + 1; 
+
+        worksheet.getCell(`E${lastRow + 1}`).value = 'Total';
+        worksheet.getCell(`F${lastRow + 1}`).value = { formula: `SUM(F2:F${lastRow})`, result: 7 };
+
+        worksheet.getCell('A1').font = { bold: true };
+        worksheet.getCell('B1').font = { bold: true };
+        worksheet.getCell('C1').font = { bold: true };
+        worksheet.getCell('D1').font = { bold: true };
+        worksheet.getCell('E1').font = { bold: true };
+        worksheet.getCell('F1').font = { bold: true };
+        worksheet.getCell(`E${lastRow + 1}`).font = { bold: true };
+        worksheet.getCell(`E${lastRow + 1}`).font = { bold: true };
+
+        worksheet.getCell('A1').alignment = { horizontal: 'right' };
+        worksheet.getCell('D1').alignment = { horizontal: 'right' };
+        worksheet.getCell('E1').alignment = { horizontal: 'right' };
+        worksheet.getCell('F1').alignment = { horizontal: 'right' };
+        worksheet.getCell(`E${lastRow + 1}`).alignment = { horizontal: 'right' };
+
+        worksheet.getColumn(6).eachCell((cell, rowNumber) => {
+            if (rowNumber > 1) { // Skip header
+                cell.numFmt = '0.00'; // Ensures 2 decimal places
+            }
+        });
 
         // Set response headers
         res.setHeader(
@@ -145,6 +171,7 @@ app.post('/api/sessions/download', async (req, res) => {
             'Content-Disposition',
             `attachment; filename=sessions-${startDate}-to-${endDate}.xlsx`
         );
+
 
         // Send the workbook
         await workbook.xlsx.write(res);
