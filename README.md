@@ -1,6 +1,6 @@
-# OCPP Session Exporter
+# Etrel Session Exporter
 
-This application allows you to export OCPP charging session data to Excel files based on a date range selection.
+This application allows you to export Etrel charging session data to Excel files based on a date range selection.
 
 ## Project Structure
 - `frontend/`: Angular frontend application
@@ -42,6 +42,3 @@ The frontend will run on http://localhost:4200
 1. Open the application in your browser at http://localhost:4200
 2. Select a start date and end date
 3. Click the "Download Sessions" button to get the Excel file
-
-## Note
-The backend currently uses mock OCPP session data. Replace the mockSessions array in `backend/server.js` with your actual OCPP data source.

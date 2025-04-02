@@ -1,7 +1,7 @@
 {
-  "name": "ocpp-session-exporter-backend",
+  "name": "etrel-session-exporter-backend",
   "version": "1.0.0",
-  "description": "Backend for OCPP session data export",
+  "description": "Backend for Etrel session data export",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

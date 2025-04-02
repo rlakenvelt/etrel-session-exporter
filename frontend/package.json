@@ -1,5 +1,5 @@
 {
-  "name": "ocpp-session-exporter-frontend",
+  "name": "etrel-session-exporter-frontend",
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
