@@ -1,0 +1,11 @@
+services:
+  frontend:
+    build: frontend
+    platform: linux/amd64
+    ports:
+      - 8080:8080
+  backend:
+    build: backend
+    platform: linux/amd64
+    ports: 
+      - 3000:3000

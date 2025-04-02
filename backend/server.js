@@ -18,26 +18,14 @@ const httpsAgent = new https.Agent({
     rejectUnauthorized: false
 });
 
-// Load configuration
-const loadConfig = () => {
-    try {
-        const configPath = path.join(__dirname, 'config.json');
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        return config;
-    } catch (error) {
-        console.error('Error loading config:', error);
-        throw new Error('Failed to load configuration');
-    }
-};
-
 // Get authentication token
-const getAuthToken = async (config) => {
+const getAuthToken = async (user, password) => {
     try {
         const formData = new URLSearchParams();
-        formData.append('email', config.api.email);
-        formData.append('password', config.api.password);
+        formData.append('email', user);
+        formData.append('password', password);
         const response = await axios.post(
-            `${config.api.baseUrl}/api/webOperatorLogin`,
+            `https://192.168.2.250/api/webOperatorLogin`,
             formData.toString(),
             {
                 headers: {
@@ -58,7 +46,7 @@ const getAuthToken = async (config) => {
 };
 
 // Fetch a single page of sessions
-const fetchSessionPage = async (config, token, startDate, endDate, pageNumber) => {
+const fetchSessionPage = async (token, startDate, endDate, pageNumber) => {
     const formData = new URLSearchParams();
     formData.append('orderByColumn', 'chargingStartedTime');
     formData.append('orderDirection', 'Descending');
@@ -68,7 +56,7 @@ const fetchSessionPage = async (config, token, startDate, endDate, pageNumber) =
     formData.append('pageNumber', pageNumber.toString());
 
     const response = await axios.post(
-        `${config.api.baseUrl}/api/chargingSession`,
+        `https://192.168.2.250/api/chargingSession`,
         formData.toString(),
         {
             headers: {
@@ -83,15 +71,14 @@ const fetchSessionPage = async (config, token, startDate, endDate, pageNumber) =
 };
 
 app.post('/api/sessions/download', async (req, res) => {
-    const { startDate, endDate } = req.body;
+    const { startDate, endDate, userId, password, kwhPrice } = req.body;
     
     try {
         // Load configuration and get auth token
-        const config = loadConfig();
-        const token = await getAuthToken(config);
+        const token = await getAuthToken(userId, password);
 
         // Fetch first page to get total count
-        const firstPage = await fetchSessionPage(config, token, startDate, endDate, 1);
+        const firstPage = await fetchSessionPage(token, startDate, endDate, 1);
         
         // Calculate total pages based on the response
         const totalItems = firstPage.pagingInfo.numOfRows;
@@ -104,7 +91,7 @@ app.post('/api/sessions/download', async (req, res) => {
         let allSessions = [...firstPage.content];
         for (let page = 2; page <= totalPages; page++) {
             console.log(`Fetching page ${page}/${totalPages}...`);
-            const pageData = await fetchSessionPage(config, token, startDate, endDate, page);
+            const pageData = await fetchSessionPage(token, startDate, endDate, page);
             allSessions.push(...pageData.content);
         }
         // get only chargingSessionId and activeEnergyConsumed from allSessions using map
@@ -198,5 +185,4 @@ app.post('/api/sessions/download', async (req, res) => {
 
 app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
-    console.log('Please ensure you have set the email and password in config.json');
 });

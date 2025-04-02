@@ -5,7 +5,7 @@ import { HttpClient } from '@angular/common/http';
   selector: 'app-root',
   template: `
     <div class="container">
-      <h1>OCPP Session Exporter</h1>
+      <h1>Etrel session exporter</h1>
       <div class="form-group">
         <label for="startDate">Start Date:</label>
         <input 
@@ -20,6 +20,30 @@ import { HttpClient } from '@angular/common/http';
           type="date" 
           id="endDate" 
           [(ngModel)]="endDate" 
+          class="form-control">
+      </div>
+      <div class="form-group">
+        <label for="userId">User:</label>
+        <input 
+          type="text" 
+          id="userId" 
+          [(ngModel)]="userId" 
+          class="form-control">
+      </div>
+      <div class="form-group">
+        <label for="userId">Password:</label>
+        <input 
+          type="password" 
+          id="password" 
+          [(ngModel)]="password" 
+          class="form-control">
+      </div>
+      <div class="form-group">
+        <label for="kwhPrice">kWh price:</label>
+        <input 
+          type="number" 
+          id="kwhPrice" 
+          [(ngModel)]="kwhPrice" 
           class="form-control">
       </div>
       <button 
@@ -82,14 +106,17 @@ import { HttpClient } from '@angular/common/http';
 export class AppComponent {
   startDate: string = '';
   endDate: string = '';
+  userId: string = '';
+  password: string = '';
+  kwhPrice: number = 0.30;
 
   constructor(private http: HttpClient) {}
 
   downloadSessions() {
     this.http.post('http://localhost:3000/api/sessions/download', 
-      { startDate: this.startDate, endDate: this.endDate }, 
+      { startDate: this.startDate, endDate: this.endDate, userId: this.userId, password: this.password, kwhPrice: this.kwhPrice }, 
       { responseType: 'blob' }
-    ).subscribe(response => {
+    ).subscribe((response: any) => {
       const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
