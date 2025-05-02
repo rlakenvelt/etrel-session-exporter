@@ -6,6 +6,7 @@ const axios = require('axios');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { baseURL } = require('./environment');
 
 const app = express();
 const port = 3000;
@@ -25,7 +26,7 @@ const getAuthToken = async (user, password) => {
         formData.append('email', user);
         formData.append('password', password);
         const response = await axios.post(
-            `https://192.168.2.250/api/webOperatorLogin`,
+            `${baseURL}/api/webOperatorLogin`,
             formData.toString(),
             {
                 headers: {
@@ -56,7 +57,7 @@ const fetchSessionPage = async (token, startDate, endDate, pageNumber) => {
     formData.append('pageNumber', pageNumber.toString());
 
     const response = await axios.post(
-        `https://192.168.2.250/api/chargingSession`,
+        `${baseURL}/api/chargingSession`,
         formData.toString(),
         {
             headers: {
