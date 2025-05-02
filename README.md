@@ -1,6 +1,6 @@
 # Etrel Session Exporter
 
-This application allows you to export Etrel charging session data to Excel files based on a date range selection.
+This application allows you to export Etrel INCH charging session data to Excel files based on a date range selection.
 
 ## Project Structure
 - `frontend/`: Angular frontend application
@@ -9,6 +9,9 @@ This application allows you to export Etrel charging session data to Excel files
 The frontend will run on http://localhost:8080
 
 ## Setup Instructions
+
+### Preparing
+In backend/environment.ts change the baseURL to the ip-address/domain of your charging station
 
 ### Docker Setup
 If you have docker installed you can simply run the application with
