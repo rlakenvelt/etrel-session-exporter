@@ -53,3 +53,5 @@ The backend will run on http://localhost:3000
 2. Select a start date and end date
 3. Enter credentials
 4. Click the "Download Sessions" button to get the Excel file
+
+![image info](./form.png)
