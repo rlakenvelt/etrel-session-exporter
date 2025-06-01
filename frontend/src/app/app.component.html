@@ -1,0 +1,49 @@
+<div class="container">
+  <h1>Etrel session exporter</h1>
+  <div class="form-group">
+    <label for="startDate">Start Date:</label>
+    <input 
+      type="date" 
+      id="startDate" 
+      [(ngModel)]="startDate" 
+      class="form-control">
+  </div>
+  <div class="form-group">
+    <label for="endDate">End Date:</label>
+    <input 
+      type="date" 
+      id="endDate" 
+      [(ngModel)]="endDate" 
+      class="form-control">
+  </div>
+  <div class="form-group">
+    <label for="userId">User:</label>
+    <input 
+      type="text" 
+      id="userId" 
+      [(ngModel)]="userId" 
+      class="form-control">
+  </div>
+  <div class="form-group">
+    <label for="userId">Password:</label>
+    <input 
+      type="password" 
+      id="password" 
+      [(ngModel)]="password" 
+      class="form-control">
+  </div>
+  <div class="form-group">
+    <label for="kwhPrice">kWh price:</label>
+    <input 
+      type="number" 
+      id="kwhPrice" 
+      [(ngModel)]="kwhPrice" 
+      class="form-control">
+  </div>
+  <button 
+    (click)="downloadSessions()" 
+    [disabled]="!startDate || !endDate"
+    class="download-btn">
+    Download Sessions
+  </button>
+</div>
