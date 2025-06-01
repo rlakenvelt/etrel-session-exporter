@@ -104,13 +104,20 @@ import { HttpClient } from '@angular/common/http';
   `]
 })
 export class AppComponent {
-  startDate: string = '';
-  endDate: string = '';
+  startDate: string;
+  endDate: string;
   userId: string = '';
   password: string = '';
   kwhPrice: number = 0.30;
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) {
+    // Set startDate and endDate to first and last day of previous month
+    const now = new Date();
+    const firstDayPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 2); // 2nd day of previous month
+    const lastDayPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    this.startDate = firstDayPrevMonth.toISOString().slice(0, 10);
+    this.endDate = lastDayPrevMonth.toISOString().slice(0, 10);
+  }
 
   downloadSessions() {
     this.http.post('http://localhost:3000/api/sessions/download', 
