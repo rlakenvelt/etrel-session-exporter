@@ -17,7 +17,7 @@ export class AppComponent {
     // Set startDate and endDate to first and last day of previous month
     const now = new Date();
     const firstDayPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 2); // 2nd day of previous month
-    const lastDayPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    const lastDayPrevMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     this.startDate = firstDayPrevMonth.toISOString().slice(0, 10);
     this.endDate = lastDayPrevMonth.toISOString().slice(0, 10);
   }
