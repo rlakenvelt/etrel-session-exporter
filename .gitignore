@@ -1,2 +1,5 @@
 backend/config.json
 frontend/.angular
+backend/node_modules
+frontend/node_modules
+frontend/dist

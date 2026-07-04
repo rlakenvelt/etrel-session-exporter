@@ -3,10 +3,12 @@ const cors = require('cors');
 const Excel = require('exceljs');
 const moment = require('moment');
 const axios = require('axios');
-const https = require('https');
-const fs = require('fs');
-const path = require('path');
+const archiver = require('archiver');
+const PDFDocument = require('pdfkit');
+const https = require('node:https');
+const path = require('node:path');
 const { baseURL } = require('./environment');
+const declarationDefaults = require('./declaration.config');
 
 const app = express();
 const port = 3000;
@@ -71,8 +73,260 @@ const fetchSessionPage = async (token, startDate, endDate, pageNumber) => {
     return response.data;
 };
 
+const euroAmount = (amount) => `EUR ${amount.toFixed(2)}`;
+
+const drawPdfCell = (document, x, y, width, height, {
+    text = '',
+    align = 'left',
+    bold = false,
+    fontSize = 12,
+    border = true,
+    rightPadding = 8,
+    leftPadding = 8,
+    topPadding = 5,
+    lineBreak = false
+} = {}) => {
+    if (border) {
+        document.rect(x, y, width, height).stroke();
+    }
+
+    document
+        .font(bold ? 'Helvetica-Bold' : 'Helvetica')
+        .fontSize(fontSize)
+        .text(text, x + leftPadding, y + topPadding, {
+            width: width - leftPadding - rightPadding,
+            height: height - topPadding - 4,
+            align,
+            lineBreak,
+            ellipsis: !lineBreak
+        });
+};
+
+const createSessionsWorkbook = async (sessions, effectiveTariff) => {
+    const workbook = new Excel.Workbook();
+    const worksheet = workbook.addWorksheet('Sessions');
+
+    worksheet.columns = [
+        { header: 'Session ID', key: 'chargingSessionId', width: 15 },
+        { header: 'Charging Started', key: 'chargingStartedTime', width: 20 },
+        { header: 'Charging Ended', key: 'chargingEndedTime', width: 20 },
+        { header: 'Metervalue Start', key: 'meterValueStart', width: 20 },
+        { header: 'Metervalue End', key: 'meterValueEnd', width: 20 },
+        { header: 'Energy Consumed (kWh)', key: 'activeEnergyConsumed', width: 20 },
+        { header: '', width: 20 }
+    ];
+
+    worksheet.addRows(sessions);
+
+    const lastRow = sessions.length + 1;
+
+    worksheet.getCell(`E${lastRow + 1}`).value = 'Totaal';
+    worksheet.getCell(`G${lastRow + 1}`).value = `Uitbetalen a ${effectiveTariff} / kWh`;
+
+    ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', `E${lastRow + 1}`, `F${lastRow + 1}`, `G${lastRow + 1}`, `H${lastRow + 1}`]
+        .forEach((cellRef) => {
+            worksheet.getCell(cellRef).font = { bold: true };
+        });
+
+    ['D1', 'E1', 'F1', `E${lastRow + 1}`].forEach((cellRef) => {
+        worksheet.getCell(cellRef).alignment = { horizontal: 'right' };
+    });
+
+    worksheet.getColumn(1).eachCell((cell, rowNumber) => {
+        if (rowNumber > 1) {
+            cell.alignment = { horizontal: 'left' };
+        }
+    });
+
+    worksheet.getColumn(6).eachCell((cell, rowNumber) => {
+        if (rowNumber > 1) {
+            cell.numFmt = '0.00';
+        }
+    });
+
+    worksheet.getCell(`F${lastRow + 1}`).value = { formula: `SUM(F2:F${lastRow})` };
+    worksheet.getCell(`H${lastRow + 1}`).value = { formula: `F${lastRow + 1} * ${effectiveTariff}` };
+    worksheet.getCell(`H${lastRow + 1}`).numFmt = '0.00';
+
+    return workbook.xlsx.writeBuffer();
+};
+
+const createDeclarationPdf = ({
+    employeeName,
+    city,
+    iban,
+    declarationDate,
+    description,
+    payoutAmount
+}) => {
+    return new Promise((resolve, reject) => {
+        const document = new PDFDocument({ margin: 0, size: 'A4' });
+        const chunks = [];
+        const formattedDate = moment(declarationDate).format('DD/MM/YYYY');
+        const formattedAmount = euroAmount(payoutAmount);
+        const logoPath = path.resolve(__dirname, 'assets', 'logo.png');
+
+        const page = {
+            left: 54,
+            top: 72,
+            width: 487,
+            tableTop: 249.5
+        };
+        const columns = [123.5, 283.8, 79.7];
+        const xPositions = [
+            page.left,
+            page.left + columns[0],
+            page.left + columns[0] + columns[1]
+        ];
+        const rowHeights = [
+            20, 20, 20, 16.5, 20, 20, 20, 20, 20,
+            20, 20, 20, 20,
+            20, 20, 20,
+            28.25,
+            20, 21, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+            27
+        ];
+        const rowTops = [];
+        let cursorY = page.top;
+        rowHeights.forEach((height) => {
+            rowTops.push(cursorY);
+            cursorY += height;
+        });
+        const sheetBottom = cursorY;
+
+        document.on('data', (chunk) => {
+            chunks.push(chunk);
+        });
+        document.on('end', () => {
+            resolve(Buffer.concat(chunks));
+        });
+        document.on('error', reject);
+
+        document.lineWidth(0.6).strokeColor('#808080').fillColor('#000000');
+
+        drawPdfCell(document, page.left, rowTops[0], page.width, rowHeights.slice(0, 9).reduce((sum, height) => sum + height, 0), {
+            border: false
+        });
+
+        document.font('Helvetica').fontSize(16).text('Declaratieformulier', page.left + 8, rowTops[0] + 8, {
+            width: 180,
+            align: 'left'
+        });
+
+        document.image(logoPath, page.left + 200, rowTops[0], {
+            fit: [300.5, 125.2],
+            align: 'left',
+            valign: 'top'
+        });
+
+        drawPdfCell(document, xPositions[0], rowTops[9], columns[0], rowHeights[9], {
+            text: 'Naam medewerker'
+        });
+        drawPdfCell(document, xPositions[1], rowTops[9], columns[1] + columns[2], rowHeights[9], {
+            text: employeeName
+        });
+
+        drawPdfCell(document, xPositions[0], rowTops[10], columns[0], rowHeights[10], {
+            text: 'Woonplaats'
+        });
+        drawPdfCell(document, xPositions[1], rowTops[10], columns[1] + columns[2], rowHeights[10], {
+            text: city
+        });
+
+        drawPdfCell(document, xPositions[0], rowTops[11], columns[0], rowHeights[11], {
+            text: 'IBAN'
+        });
+        drawPdfCell(document, xPositions[1], rowTops[11], columns[1] + columns[2], rowHeights[11], {
+            text: iban
+        });
+
+        drawPdfCell(document, xPositions[0], rowTops[12], columns[0], rowHeights[12], {
+            text: 'Datum'
+        });
+        drawPdfCell(document, xPositions[1], rowTops[12], columns[1] + columns[2], rowHeights[12], {
+            text: formattedDate
+        });
+
+        const separatorTop = rowTops[13];
+        const separatorHeight = rowHeights[13] + rowHeights[14] + rowHeights[15];
+        document.moveTo(page.left, separatorTop + separatorHeight).lineTo(page.left + page.width, separatorTop + separatorHeight).stroke();
+
+        drawPdfCell(document, xPositions[0], rowTops[16], columns[0], rowHeights[16], {
+            text: 'Datum',
+            bold: true,
+            border: true,
+            fontSize: 12,
+            topPadding: 7
+        });
+        drawPdfCell(document, xPositions[1], rowTops[16], columns[1], rowHeights[16], {
+            text: 'Omschrijving',
+            bold: true,
+            border: true,
+            fontSize: 12,
+            topPadding: 7
+        });
+        drawPdfCell(document, xPositions[2], rowTops[16], columns[2], rowHeights[16], {
+            text: 'Bedrag',
+            bold: true,
+            align: 'right',
+            border: true,
+            fontSize: 12,
+            topPadding: 7
+        });
+
+        const itemDate = formattedDate;
+        const itemStartRow = 17;
+        const itemEndRow = 27;
+
+        drawPdfCell(document, xPositions[0], rowTops[itemStartRow], columns[0], rowHeights[itemStartRow], {
+            text: itemDate,
+            fontSize: 12
+        });
+        drawPdfCell(document, xPositions[1], rowTops[itemStartRow], columns[1], rowHeights[itemStartRow], {
+            text: description,
+            fontSize: 12
+        });
+        drawPdfCell(document, xPositions[2], rowTops[itemStartRow], columns[2], rowHeights[itemStartRow], {
+            text: formattedAmount,
+            align: 'right',
+            fontSize: 12
+        });
+
+        for (let rowIndex = itemStartRow + 1; rowIndex <= itemEndRow; rowIndex += 1) {
+            drawPdfCell(document, xPositions[0], rowTops[rowIndex], columns[0], rowHeights[rowIndex], {});
+            drawPdfCell(document, xPositions[1], rowTops[rowIndex], columns[1], rowHeights[rowIndex], {});
+            drawPdfCell(document, xPositions[2], rowTops[rowIndex], columns[2], rowHeights[rowIndex], {});
+        }
+
+        drawPdfCell(document, xPositions[0], rowTops[28], columns[0] + columns[1], rowHeights[28], {
+            text: 'Totaal',
+            bold: true,
+            fontSize: 12
+        });
+        drawPdfCell(document, xPositions[2], rowTops[28], columns[2], rowHeights[28], {
+            text: formattedAmount,
+            bold: true,
+            align: 'right',
+            fontSize: 12
+        });
+
+        document.rect(page.left, rowTops[16], page.width, sheetBottom - rowTops[16]).stroke();
+
+        document.end();
+    });
+};
+
 app.post('/api/sessions/download', async (req, res) => {
-    const { startDate, endDate, userId, password, kwhPrice } = req.body;
+    const {
+        startDate,
+        endDate,
+        userId,
+        password,
+        kwhPrice,
+        declarationDate
+    } = req.body;
+    const tariff = Number(kwhPrice);
+    const effectiveTariff = Number.isFinite(tariff) ? tariff : 0.3;
     
     try {
         // Load configuration and get auth token
@@ -83,7 +337,6 @@ app.post('/api/sessions/download', async (req, res) => {
         
         // Calculate total pages based on the response
         const totalItems = firstPage.pagingInfo.numOfRows;
-        const pageSize = 100;
         const totalPages = firstPage.pagingInfo.pageCount;
 
         console.log(`Fetching ${totalItems} sessions across ${totalPages} pages...`);
@@ -107,74 +360,43 @@ app.post('/api/sessions/download', async (req, res) => {
 
         console.log(`Successfully fetched ${allSessions.length} sessions.`);
 
-        // Create Excel workbook
-        const workbook = new Excel.Workbook();
-        const worksheet = workbook.addWorksheet('Sessions');
+        const totalEnergyConsumed = allSessions.reduce((total, session) => {
+            const energy = Number(session.activeEnergyConsumed);
+            return total + (Number.isFinite(energy) ? energy : 0);
+        }, 0);
+        const payoutAmount = Number((totalEnergyConsumed * effectiveTariff).toFixed(2));
+        const periodStart = moment(startDate);
+        const descriptionMonth = periodStart.isValid() ? periodStart.locale('nl').format('MMMM YYYY') : `${startDate} - ${endDate}`;
+        const descriptionSuffix = declarationDefaults.homeAddress ? ` ${declarationDefaults.homeAddress}` : '';
+        const declarationDescription = `Laadpaal thuis ${descriptionMonth}${descriptionSuffix}`;
 
-        // Add headers based on the actual API response structure
-        worksheet.columns = [
-            { header: 'Session ID', key: 'chargingSessionId', width: 15 },
-            { header: 'Charging Started', key: 'chargingStartedTime', width: 20 },
-            { header: 'Charging Ended', key: 'chargingEndedTime', width: 20 },
-            { header: 'Metervalue Start', key: 'meterValueStart', width: 20 },
-            { header: 'Metervalue End', key: 'meterValueEnd', width: 20 },
-            { header: 'Energy Consumed (kWh)', key: 'activeEnergyConsumed', width: 20 },
-            { header: '', width: 20 }
-        ];
+        const [sessionsWorkbookBuffer, declarationPdfBuffer] = await Promise.all([
+            createSessionsWorkbook(allSessions, effectiveTariff),
+            createDeclarationPdf({
+                employeeName: declarationDefaults.employeeName,
+                city: declarationDefaults.city,
+                iban: declarationDefaults.iban,
+                declarationDate: declarationDate || moment().format('YYYY-MM-DD'),
+                description: declarationDescription,
+                payoutAmount
+            })
+        ]);
 
-        // Add data
-        worksheet.addRows(allSessions);
-
-        const lastRow = allSessions.length + 1; 
-        const tarif = 0.30; // 30 cents per kWh
-        
-        worksheet.getCell(`E${lastRow + 1}`).value = 'Total';
-        worksheet.getCell(`G${lastRow + 1}`).value = `Uitbetalen a ${tarif} / kWh`;
-
-        worksheet.getCell('A1').font = { bold: true };
-        worksheet.getCell('B1').font = { bold: true };
-        worksheet.getCell('C1').font = { bold: true };
-        worksheet.getCell('D1').font = { bold: true };
-        worksheet.getCell('E1').font = { bold: true };
-        worksheet.getCell('F1').font = { bold: true };
-        worksheet.getCell(`E${lastRow + 1}`).font = { bold: true };
-        worksheet.getCell(`F${lastRow + 1}`).font = { bold: true };
-        worksheet.getCell(`G${lastRow + 1}`).font = { bold: true };
-        worksheet.getCell(`H${lastRow + 1}`).font = { bold: true };
-
-        worksheet.getCell('D1').alignment = { horizontal: 'right' };
-        worksheet.getCell('E1').alignment = { horizontal: 'right' };
-        worksheet.getCell('F1').alignment = { horizontal: 'right' };
-        worksheet.getCell(`E${lastRow + 1}`).alignment = { horizontal: 'right' };
-
-        worksheet.getColumn(1).eachCell((cell, rowNumber) => {
-            if (rowNumber > 1) { // Skip header
-                cell.alignment = { horizontal: 'left' };
-            }
-        });
-        worksheet.getColumn(6).eachCell((cell, rowNumber) => {
-            if (rowNumber > 1) { // Skip header
-                cell.numFmt = '0.00'; // Ensures 2 decimal places
-            }
-        });
-
-        worksheet.getCell(`F${lastRow + 1}`).value = { formula: `SUM(F2:F${lastRow})`, result: 7 };
-        worksheet.getCell(`H${lastRow + 1}`).value = { formula: `F${lastRow + 1} * ${tarif}`, result: 7 };
-
-        // Set response headers
-        res.setHeader(
-            'Content-Type',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        );
+        res.setHeader('Content-Type', 'application/zip');
         res.setHeader(
             'Content-Disposition',
-            `attachment; filename=sessions-${startDate}-to-${endDate}.xlsx`
+            `attachment; filename=sessions-${startDate}-to-${endDate}.zip`
         );
 
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        archive.on('error', (archiveError) => {
+            throw archiveError;
+        });
 
-        // Send the workbook
-        await workbook.xlsx.write(res);
-        res.end();
+        archive.pipe(res);
+        archive.append(sessionsWorkbookBuffer, { name: `sessions-${startDate}-to-${endDate}.xlsx` });
+    archive.append(declarationPdfBuffer, { name: `declaratie-${startDate}-to-${endDate}.pdf` });
+        await archive.finalize();
     } catch (error) {
         console.error('Error fetching or processing sessions:', error);
         res.status(500).json({ 
