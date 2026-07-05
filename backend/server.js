@@ -110,30 +110,52 @@ const drawPdfCell = (document, x, y, width, height, {
 const createSessionsWorkbook = async (sessions, effectiveTariff) => {
     const workbook = new Excel.Workbook();
     const worksheet = workbook.addWorksheet('Sessions');
+    const sortedSessions = [...sessions].sort((leftSession, rightSession) => {
+        const leftId = leftSession.chargingSessionId;
+        const rightId = rightSession.chargingSessionId;
+        const leftNumericId = Number(leftId);
+        const rightNumericId = Number(rightId);
+
+        if (Number.isFinite(leftNumericId) && Number.isFinite(rightNumericId)) {
+            return leftNumericId - rightNumericId;
+        }
+
+        return String(leftId ?? '').localeCompare(String(rightId ?? ''), undefined, { numeric: true });
+    });
+    const formattedSessions = sortedSessions.map((session) => {
+        const startedTime = moment(session.chargingStartedTime);
+        const endedTime = moment(session.chargingEndedTime);
+
+        return {
+            ...session,
+            chargingStartedTime: startedTime.isValid() ? startedTime.toDate() : session.chargingStartedTime,
+            chargingEndedTime: endedTime.isValid() ? endedTime.toDate() : session.chargingEndedTime
+        };
+    });
 
     worksheet.columns = [
-        { header: 'Session ID', key: 'chargingSessionId', width: 15 },
-        { header: 'Charging Started', key: 'chargingStartedTime', width: 20 },
-        { header: 'Charging Ended', key: 'chargingEndedTime', width: 20 },
-        { header: 'Metervalue Start', key: 'meterValueStart', width: 20 },
-        { header: 'Metervalue End', key: 'meterValueEnd', width: 20 },
-        { header: 'Energy Consumed (kWh)', key: 'activeEnergyConsumed', width: 20 },
+        { header: 'Sessie', key: 'chargingSessionId', width: 15 },
+        { header: 'Gestart', key: 'chargingStartedTime', width: 20 },
+        { header: 'Beëindigd', key: 'chargingEndedTime', width: 20 },
+        { header: 'Meter start', key: 'meterValueStart', width: 20 },
+        { header: 'Meter eind', key: 'meterValueEnd', width: 20 },
+        { header: 'Verbruik (kWh)', key: 'activeEnergyConsumed', width: 20 },
         { header: '', width: 20 }
     ];
 
-    worksheet.addRows(sessions);
+    worksheet.addRows(formattedSessions);
 
-    const lastRow = sessions.length + 1;
+    const lastRow = formattedSessions.length + 1;
 
     worksheet.getCell(`E${lastRow + 1}`).value = 'Totaal';
-    worksheet.getCell(`G${lastRow + 1}`).value = `Uitbetalen a ${effectiveTariff} / kWh`;
+    worksheet.getCell(`E${lastRow + 3}`).value = `Uitbetalen a ${effectiveTariff} / kWh`;
 
-    ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', `E${lastRow + 1}`, `F${lastRow + 1}`, `G${lastRow + 1}`, `H${lastRow + 1}`]
+    ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', `E${lastRow + 1}`, `F${lastRow + 1}`, `E${lastRow + 3}`, `F${lastRow + 3}`]
         .forEach((cellRef) => {
             worksheet.getCell(cellRef).font = { bold: true };
         });
 
-    ['D1', 'E1', 'F1', `E${lastRow + 1}`].forEach((cellRef) => {
+    ['D1', 'E1', 'F1', `E${lastRow + 1}`, `F${lastRow + 1}`, `E${lastRow + 3}`, `F${lastRow + 3}`].forEach((cellRef) => {
         worksheet.getCell(cellRef).alignment = { horizontal: 'right' };
     });
 
@@ -143,6 +165,15 @@ const createSessionsWorkbook = async (sessions, effectiveTariff) => {
         }
     });
 
+    [2, 3].forEach((columnNumber) => {
+        worksheet.getColumn(columnNumber).eachCell((cell, rowNumber) => {
+            if (rowNumber > 1 && cell.value instanceof Date) {
+                cell.alignment = { horizontal: 'left' };
+                cell.numFmt = 'dd-mm-yyyy hh:mm';
+            }
+        });
+    });
+
     worksheet.getColumn(6).eachCell((cell, rowNumber) => {
         if (rowNumber > 1) {
             cell.numFmt = '0.00';
@@ -150,8 +181,8 @@ const createSessionsWorkbook = async (sessions, effectiveTariff) => {
     });
 
     worksheet.getCell(`F${lastRow + 1}`).value = { formula: `SUM(F2:F${lastRow})` };
-    worksheet.getCell(`H${lastRow + 1}`).value = { formula: `F${lastRow + 1} * ${effectiveTariff}` };
-    worksheet.getCell(`H${lastRow + 1}`).numFmt = '0.00';
+    worksheet.getCell(`F${lastRow + 3}`).value = { formula: `F${lastRow + 1} * ${effectiveTariff}` };
+    worksheet.getCell(`F${lastRow + 3}`).numFmt = '0.00';
 
     return workbook.xlsx.writeBuffer();
 };
