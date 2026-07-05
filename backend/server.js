@@ -1,9 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-const Excel = require('exceljs');
 const moment = require('moment');
 const axios = require('axios');
-const archiver = require('archiver');
 const PDFDocument = require('pdfkit');
 const https = require('node:https');
 const path = require('node:path');
@@ -107,84 +105,151 @@ const drawPdfCell = (document, x, y, width, height, {
         });
 };
 
-const createSessionsWorkbook = async (sessions, effectiveTariff) => {
-    const workbook = new Excel.Workbook();
-    const worksheet = workbook.addWorksheet('Sessions');
-    const sortedSessions = [...sessions].sort((leftSession, rightSession) => {
-        const leftId = leftSession.chargingSessionId;
-        const rightId = rightSession.chargingSessionId;
-        const leftNumericId = Number(leftId);
-        const rightNumericId = Number(rightId);
+const sortSessionsById = (sessions) => [...sessions].sort((leftSession, rightSession) => {
+    const leftId = leftSession.chargingSessionId;
+    const rightId = rightSession.chargingSessionId;
+    const leftNumericId = Number(leftId);
+    const rightNumericId = Number(rightId);
 
-        if (Number.isFinite(leftNumericId) && Number.isFinite(rightNumericId)) {
-            return leftNumericId - rightNumericId;
+    if (Number.isFinite(leftNumericId) && Number.isFinite(rightNumericId)) {
+        return leftNumericId - rightNumericId;
+    }
+
+    return String(leftId ?? '').localeCompare(String(rightId ?? ''), undefined, { numeric: true });
+});
+
+const formatSessionDateTime = (value) => {
+    const parsedValue = moment(value);
+    return parsedValue.isValid() ? parsedValue.format('DD-MM-YYYY HH:mm') : String(value ?? '');
+};
+
+const createSessionOverviewRows = (sessions) => sortSessionsById(sessions).map((session) => {
+    const energyConsumed = Number(session.activeEnergyConsumed);
+
+    return {
+        chargingSessionId: String(session.chargingSessionId ?? ''),
+        chargingStartedTime: formatSessionDateTime(session.chargingStartedTime),
+        chargingEndedTime: formatSessionDateTime(session.chargingEndedTime),
+        meterValueStart: String(session.meterValueStart ?? ''),
+        meterValueEnd: String(session.meterValueEnd ?? ''),
+        activeEnergyConsumed: Number.isFinite(energyConsumed) ? formatDecimal(energyConsumed, 2, 2) : String(session.activeEnergyConsumed ?? ''),
+        rawEnergyConsumed: Number.isFinite(energyConsumed) ? energyConsumed : 0
+    };
+});
+
+const addSessionOverviewPages = (document, sessions, effectiveTariff) => {
+    const overviewRows = createSessionOverviewRows(sessions);
+    const totalEnergyConsumed = overviewRows.reduce((total, session) => total + session.rawEnergyConsumed, 0);
+    const table = {
+        left: 28,
+        top: 24,
+        rowHeight: 16,
+        pageWidth: 841.89,
+        pageHeight: 595.28,
+        bottomMargin: 24,
+        columns: [
+            { header: 'Sessie', key: 'chargingSessionId', width: 100, align: 'left' },
+            { header: 'Gestart', key: 'chargingStartedTime', width: 150, align: 'left' },
+            { header: 'Beëindigd', key: 'chargingEndedTime', width: 150, align: 'left' },
+            { header: 'Meter start', key: 'meterValueStart', width: 110, align: 'right' },
+            { header: 'Meter eind', key: 'meterValueEnd', width: 110, align: 'right' },
+            { header: 'Verbruik (kWh)', key: 'activeEnergyConsumed', width: 140, align: 'right' }
+        ]
+    };
+    const totalTableWidth = table.columns.reduce((sum, column) => sum + column.width, 0);
+    const headerAndRowsHeight = table.pageHeight - table.top - table.bottomMargin;
+    const maxRowsPerPage = Math.floor((headerAndRowsHeight - table.rowHeight) / table.rowHeight);
+    const summaryRows = 3;
+    const maxRowsOnFinalPage = maxRowsPerPage - summaryRows;
+    const pages = [];
+
+    if (overviewRows.length <= maxRowsOnFinalPage) {
+        pages.push({ rows: overviewRows, showSummary: true });
+    } else {
+        let startIndex = 0;
+        const rowsBeforeFinalPage = overviewRows.length - maxRowsOnFinalPage;
+        const fullPageCount = Math.ceil(rowsBeforeFinalPage / maxRowsPerPage);
+
+        for (let pageIndex = 0; pageIndex < fullPageCount; pageIndex++) {
+            const remainingRowsBeforeFinalPage = rowsBeforeFinalPage - startIndex;
+            const rowsForPage = Math.min(maxRowsPerPage, remainingRowsBeforeFinalPage);
+            pages.push({ rows: overviewRows.slice(startIndex, startIndex + rowsForPage), showSummary: false });
+            startIndex += rowsForPage;
         }
 
-        return String(leftId ?? '').localeCompare(String(rightId ?? ''), undefined, { numeric: true });
-    });
-    const formattedSessions = sortedSessions.map((session) => {
-        const startedTime = moment(session.chargingStartedTime);
-        const endedTime = moment(session.chargingEndedTime);
+        pages.push({ rows: overviewRows.slice(startIndex), showSummary: true });
+    }
 
-        return {
-            ...session,
-            chargingStartedTime: startedTime.isValid() ? startedTime.toDate() : session.chargingStartedTime,
-            chargingEndedTime: endedTime.isValid() ? endedTime.toDate() : session.chargingEndedTime
-        };
-    });
+    pages.forEach((pageData) => {
+        document.addPage({ margin: 0, size: 'A4', layout: 'landscape' });
 
-    worksheet.columns = [
-        { header: 'Sessie', key: 'chargingSessionId', width: 15 },
-        { header: 'Gestart', key: 'chargingStartedTime', width: 20 },
-        { header: 'Beëindigd', key: 'chargingEndedTime', width: 20 },
-        { header: 'Meter start', key: 'meterValueStart', width: 20 },
-        { header: 'Meter eind', key: 'meterValueEnd', width: 20 },
-        { header: 'Verbruik (kWh)', key: 'activeEnergyConsumed', width: 20 },
-        { header: '', width: 20 }
-    ];
+        let currentY = table.top;
+        let currentX = table.left;
+        document.lineWidth(0.75);
 
-    worksheet.addRows(formattedSessions);
-
-    const lastRow = formattedSessions.length + 1;
-
-    worksheet.getCell(`E${lastRow + 1}`).value = 'Totaal';
-    worksheet.getCell(`E${lastRow + 3}`).value = `Uitbetalen a ${effectiveTariff} / kWh`;
-
-    ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', `E${lastRow + 1}`, `F${lastRow + 1}`, `E${lastRow + 3}`, `F${lastRow + 3}`]
-        .forEach((cellRef) => {
-            worksheet.getCell(cellRef).font = { bold: true };
+        table.columns.forEach((column) => {
+            drawPdfCell(document, currentX, currentY, column.width, table.rowHeight, {
+                text: column.header,
+                bold: true,
+                fontSize: 8.5,
+                align: column.align
+            });
+            currentX += column.width;
         });
 
-    ['D1', 'E1', 'F1', `E${lastRow + 1}`, `F${lastRow + 1}`, `E${lastRow + 3}`, `F${lastRow + 3}`].forEach((cellRef) => {
-        worksheet.getCell(cellRef).alignment = { horizontal: 'right' };
-    });
+        currentY += table.rowHeight;
 
-    worksheet.getColumn(1).eachCell((cell, rowNumber) => {
-        if (rowNumber > 1) {
-            cell.alignment = { horizontal: 'left' };
-        }
-    });
+        pageData.rows.forEach((session) => {
+            currentX = table.left;
 
-    [2, 3].forEach((columnNumber) => {
-        worksheet.getColumn(columnNumber).eachCell((cell, rowNumber) => {
-            if (rowNumber > 1 && cell.value instanceof Date) {
-                cell.alignment = { horizontal: 'left' };
-                cell.numFmt = 'dd-mm-yyyy hh:mm';
-            }
+            table.columns.forEach((column) => {
+                drawPdfCell(document, currentX, currentY, column.width, table.rowHeight, {
+                    text: String(session[column.key] ?? ''),
+                    fontSize: 8.5,
+                    align: column.align
+                });
+                currentX += column.width;
+            });
+
+            currentY += table.rowHeight;
         });
-    });
 
-    worksheet.getColumn(6).eachCell((cell, rowNumber) => {
-        if (rowNumber > 1) {
-            cell.numFmt = '0.00';
+        if (pageData.showSummary) {
+            const meterEndColumnStart = table.left + table.columns.slice(0, 4).reduce((sum, column) => sum + column.width, 0);
+            const energyColumnStart = meterEndColumnStart + table.columns[4].width;
+            const summaryLabelWidth = table.columns[4].width;
+
+            drawPdfCell(document, meterEndColumnStart, currentY, summaryLabelWidth, table.rowHeight, {
+                text: 'Totaal',
+                bold: true,
+                fontSize: 8.5,
+                align: 'right'
+            });
+            drawPdfCell(document, energyColumnStart, currentY, table.columns[5].width, table.rowHeight, {
+                text: formatDecimal(totalEnergyConsumed, 2, 2),
+                bold: true,
+                fontSize: 8.5,
+                align: 'right'
+            });
+
+            currentY += table.rowHeight * 2;
+
+            drawPdfCell(document, meterEndColumnStart, currentY, summaryLabelWidth, table.rowHeight, {
+                text: `Uitbetalen a ${effectiveTariff} / kWh`,
+                bold: true,
+                fontSize: 8.5,
+                align: 'right'
+            });
+            drawPdfCell(document, energyColumnStart, currentY, table.columns[5].width, table.rowHeight, {
+                text: formatDecimal(totalEnergyConsumed * effectiveTariff, 2, 2),
+                bold: true,
+                fontSize: 8.5,
+                align: 'right'
+            });
         }
+
+        document.rect(table.left, table.top, totalTableWidth, currentY + (pageData.showSummary ? table.rowHeight : 0) - table.top).stroke();
     });
-
-    worksheet.getCell(`F${lastRow + 1}`).value = { formula: `SUM(F2:F${lastRow})` };
-    worksheet.getCell(`F${lastRow + 3}`).value = { formula: `F${lastRow + 1} * ${effectiveTariff}` };
-    worksheet.getCell(`F${lastRow + 3}`).numFmt = '0.00';
-
-    return workbook.xlsx.writeBuffer();
 };
 
 const createDeclarationPdf = ({
@@ -194,7 +259,9 @@ const createDeclarationPdf = ({
     declarationDate,
     description1,
     description2,
-    payoutAmount
+    payoutAmount,
+    sessions,
+    effectiveTariff
 }) => {
     return new Promise((resolve, reject) => {
         const document = new PDFDocument({ margin: 0, size: 'A4' });
@@ -358,6 +425,8 @@ const createDeclarationPdf = ({
 
         document.rect(page.left, rowTops[16], page.width, sheetBottom - rowTops[16]).stroke();
 
+        addSessionOverviewPages(document, sessions, effectiveTariff);
+
         document.end();
     });
 };
@@ -419,34 +488,24 @@ app.post('/api/sessions/download', async (req, res) => {
         const declarationDescription1 = `Laadpaal ${declarationDefaults.homeAddress || ''}`;
         const declarationDescription2 = `${descriptionMonth}, ${formatDecimal(totalEnergyConsumed, 1)} kWh à ${formatDecimal(effectiveTariff, 2)}`;
 
-        const [sessionsWorkbookBuffer, declarationPdfBuffer] = await Promise.all([
-            createSessionsWorkbook(allSessions, effectiveTariff),
-            createDeclarationPdf({
-                employeeName: declarationDefaults.employeeName,
-                city: declarationDefaults.city,
-                iban: declarationDefaults.iban,
-                declarationDate: declarationDate || moment().format('YYYY-MM-DD'),
-                description1: declarationDescription1,
-                description2: declarationDescription2,
-                payoutAmount
-            })
-        ]);
-
-        res.setHeader('Content-Type', 'application/zip');
-        res.setHeader(
-            'Content-Disposition',
-            `attachment; filename=sessions-${startDate}-to-${endDate}.zip`
-        );
-
-        const archive = archiver('zip', { zlib: { level: 9 } });
-        archive.on('error', (archiveError) => {
-            throw archiveError;
+        const declarationPdfBuffer = await createDeclarationPdf({
+            employeeName: declarationDefaults.employeeName,
+            city: declarationDefaults.city,
+            iban: declarationDefaults.iban,
+            declarationDate: declarationDate || moment().format('YYYY-MM-DD'),
+            description1: declarationDescription1,
+            description2: declarationDescription2,
+            payoutAmount,
+            sessions: allSessions,
+            effectiveTariff
         });
 
-        archive.pipe(res);
-        archive.append(sessionsWorkbookBuffer, { name: `sessions-${startDate}-to-${endDate}.xlsx` });
-    archive.append(declarationPdfBuffer, { name: `declaratie-${startDate}-to-${endDate}.pdf` });
-        await archive.finalize();
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+            'Content-Disposition',
+            `attachment; filename=declaratie-${startDate}-to-${endDate}.pdf`
+        );
+        res.send(declarationPdfBuffer);
     } catch (error) {
         console.error('Error fetching or processing sessions:', error);
         res.status(500).json({ 

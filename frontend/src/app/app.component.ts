@@ -36,11 +36,11 @@ export class AppComponent {
       }, 
       { responseType: 'blob' }
     ).subscribe((response: any) => {
-      const blob = new Blob([response], { type: 'application/zip' });
+      const blob = new Blob([response], { type: 'application/pdf' });
       const url = globalThis.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `sessions-${this.startDate}-to-${this.endDate}.zip`;
+      link.download = `declaratie-${this.startDate}-to-${this.endDate}.pdf`;
       link.click();
       globalThis.URL.revokeObjectURL(url);
     });
