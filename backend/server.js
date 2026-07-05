@@ -235,7 +235,7 @@ const addSessionOverviewPages = (document, sessions, effectiveTariff) => {
             currentY += table.rowHeight * 2;
 
             drawPdfCell(document, meterEndColumnStart, currentY, summaryLabelWidth, table.rowHeight, {
-                text: `Uitbetalen a ${effectiveTariff} / kWh`,
+                text: `Uitbetalen à ${effectiveTariff} / kWh`,
                 bold: true,
                 fontSize: 8.5,
                 align: 'right'
@@ -482,6 +482,9 @@ app.post('/api/sessions/download', async (req, res) => {
         const payoutAmount = Number((totalEnergyConsumed * effectiveTariff).toFixed(2));
         const periodStart = moment(startDate);
         let descriptionMonth = periodStart.isValid() ? periodStart.locale('nl').format('MMMM YYYY') : `${startDate} - ${endDate}`;
+        const downloadFileName = periodStart.isValid()
+            ? `Laadpaal-declaratie-${periodStart.locale('nl').format('MMMM-YYYY')}.pdf`
+            : `Laadpaal-declaratie-${startDate}-to-${endDate}.pdf`;
         if (descriptionMonth) {
             descriptionMonth = descriptionMonth.charAt(0).toUpperCase() + descriptionMonth.slice(1);
         }
@@ -503,7 +506,7 @@ app.post('/api/sessions/download', async (req, res) => {
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader(
             'Content-Disposition',
-            `attachment; filename=declaratie-${startDate}-to-${endDate}.pdf`
+            `attachment; filename="${downloadFileName}"`
         );
         res.send(declarationPdfBuffer);
     } catch (error) {

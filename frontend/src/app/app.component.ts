@@ -24,6 +24,18 @@ export class AppComponent {
     this.declarationDate = now.toISOString().slice(0, 10);
   }
 
+  private buildDownloadFileName(): string {
+    const periodStart = new Date(`${this.startDate}T00:00:00`);
+
+    if (Number.isNaN(periodStart.getTime())) {
+      return `Laadpaal-declaratie-${this.startDate}-to-${this.endDate}.pdf`;
+    }
+
+    const month = new Intl.DateTimeFormat('nl-NL', { month: 'long' }).format(periodStart);
+    const year = new Intl.DateTimeFormat('nl-NL', { year: 'numeric' }).format(periodStart);
+    return `Laadpaal-declaratie-${month}-${year}.pdf`;
+  }
+
   downloadSessions() {
     this.http.post('http://localhost:3000/api/sessions/download', 
       {
@@ -40,7 +52,7 @@ export class AppComponent {
       const url = globalThis.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `declaratie-${this.startDate}-to-${this.endDate}.pdf`;
+      link.download = this.buildDownloadFileName();
       link.click();
       globalThis.URL.revokeObjectURL(url);
     });
