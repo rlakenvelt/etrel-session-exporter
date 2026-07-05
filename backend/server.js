@@ -161,8 +161,8 @@ const createDeclarationPdf = ({
     city,
     iban,
     declarationDate,
-    description,
-    descriptionAddress,
+    description1,
+    description2,
     payoutAmount
 }) => {
     return new Promise((resolve, reject) => {
@@ -289,25 +289,25 @@ const createDeclarationPdf = ({
             fontSize: 12
         });
         drawPdfCell(document, xPositions[1], rowTops[itemStartRow], columns[1], rowHeights[itemStartRow], {
-            text: description,
+            text: description1,
             fontSize: 12
         });
-        drawPdfCell(document, xPositions[2], rowTops[itemStartRow], columns[2], rowHeights[itemStartRow], {
+        drawPdfCell(document, xPositions[2], rowTops[itemStartRow + 1], columns[2], rowHeights[itemStartRow + 1], {
             text: formattedAmount,
             align: 'right',
             fontSize: 12
         });
 
-        if (descriptionAddress) {
+        if (description2) {
             drawPdfCell(document, xPositions[1], rowTops[itemStartRow + 1], columns[1], rowHeights[itemStartRow + 1], {
-                text: descriptionAddress,
+                text: description2,
                 fontSize: 12
             });
         }
 
         for (let rowIndex = itemStartRow + 1; rowIndex <= itemEndRow; rowIndex += 1) {
             drawPdfCell(document, xPositions[0], rowTops[rowIndex], columns[0], rowHeights[rowIndex], {});
-            if (!(descriptionAddress && rowIndex === itemStartRow + 1)) {
+            if (!(description2 && rowIndex === itemStartRow + 1)) {
                 drawPdfCell(document, xPositions[1], rowTops[rowIndex], columns[1], rowHeights[rowIndex], {});
             }
             drawPdfCell(document, xPositions[2], rowTops[rowIndex], columns[2], rowHeights[rowIndex], {});
@@ -341,7 +341,7 @@ app.post('/api/sessions/download', async (req, res) => {
         declarationDate
     } = req.body;
     const tariff = Number(kwhPrice);
-    const effectiveTariff = Number.isFinite(tariff) ? tariff : 0.3;
+    const effectiveTariff = Number.isFinite(tariff) ? tariff : 0.25;
     
     try {
         // Load configuration and get auth token
@@ -381,9 +381,12 @@ app.post('/api/sessions/download', async (req, res) => {
         }, 0);
         const payoutAmount = Number((totalEnergyConsumed * effectiveTariff).toFixed(2));
         const periodStart = moment(startDate);
-        const descriptionMonth = periodStart.isValid() ? periodStart.locale('nl').format('MMMM YYYY') : `${startDate} - ${endDate}`;
-        const declarationDescription = `Laadpaal thuis ${descriptionMonth} ${formatDecimal(totalEnergyConsumed, 1)} kWh à ${formatDecimal(effectiveTariff, 2)}`;
-        const declarationDescriptionAddress = declarationDefaults.homeAddress || '';
+        let descriptionMonth = periodStart.isValid() ? periodStart.locale('nl').format('MMMM YYYY') : `${startDate} - ${endDate}`;
+        if (descriptionMonth) {
+            descriptionMonth = descriptionMonth.charAt(0).toUpperCase() + descriptionMonth.slice(1);
+        }
+        const declarationDescription1 = `Laadpaal ${declarationDefaults.homeAddress || ''}`;
+        const declarationDescription2 = `${descriptionMonth}, ${formatDecimal(totalEnergyConsumed, 1)} kWh à ${formatDecimal(effectiveTariff, 2)}`;
 
         const [sessionsWorkbookBuffer, declarationPdfBuffer] = await Promise.all([
             createSessionsWorkbook(allSessions, effectiveTariff),
@@ -392,8 +395,8 @@ app.post('/api/sessions/download', async (req, res) => {
                 city: declarationDefaults.city,
                 iban: declarationDefaults.iban,
                 declarationDate: declarationDate || moment().format('YYYY-MM-DD'),
-                description: declarationDescription,
-                descriptionAddress: declarationDescriptionAddress,
+                description1: declarationDescription1,
+                description2: declarationDescription2,
                 payoutAmount
             })
         ]);

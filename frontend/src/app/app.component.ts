@@ -11,7 +11,7 @@ export class AppComponent {
   endDate: string;
   userId: string = '';
   password: string = '';
-  kwhPrice: number = 0.3;
+  kwhPrice: number = 0.25;
   declarationDate: string;
 
   constructor(private readonly http: HttpClient) {
